@@ -1,0 +1,272 @@
+// This is your Prisma schema file for Supabase PostgreSQL
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model BusinessUnit {
+  id        String   @id @default(uuid())
+  name      String
+  code      String
+  type      String   @default("filial") // matriz, filial
+  address   String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  companyId String
+
+  company   Company  @relation(fields: [companyId], references: [id])
+  users     User[]
+  epis      EPI[]
+  movements Movement[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+model User {
+  id               String   @id @default(uuid())
+  email            String   @unique
+  password         String
+  name             String
+  role             String   @default("operador") // master, admin, operador, visualizador
+  department       String?
+  status           String   @default("active")  // active, pending, inactive
+  permissions      Json     @default("{}")
+  lastLogin        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  businessUnitId   String?
+  companyId        String
+
+  company          Company       @relation(fields: [companyId], references: [id])
+  businessUnit     BusinessUnit? @relation(fields: [businessUnitId], references: [id], onDelete: SetNull)
+  movements        Movement[] @relation("UserMovements")
+
+  @@index([companyId])
+}
+
+model EPI {
+  id           String   @id @default(uuid())
+  code         String
+  name         String
+  category     String
+  location     String
+  minQty       Int      @default(0)
+  currentQty   Int      @default(0)
+  unit         String   @default("un")
+  status       String   @default("disponivel") // disponivel, baixo, esgotado
+  manufacturer String?
+  caNumber     String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  businessUnitId String?
+  companyId    String
+
+  company      Company       @relation(fields: [companyId], references: [id])
+  businessUnit BusinessUnit? @relation(fields: [businessUnitId], references: [id], onDelete: SetNull)
+  movements    Movement[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+model FormulaRetirada {
+  id           String   @id @default(uuid())
+  name         String
+  manufacturer String?
+  minQty       Int      @default(0)
+  currentQty   Int      @default(0)
+  unit         String   @default("un")
+  notes        String?
+  location     String
+  companyId    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company      Company          @relation(fields: [companyId], references: [id])
+  movements    FormulaMovement[]
+  lots         FormulaLot[]
+
+  @@index([companyId])
+}
+
+model FormulaLot {
+  id              String   @id @default(uuid())
+  formulaId       String
+  batchCode       String
+  quantity        Int      @default(0)
+  entryDate       DateTime @default(now())
+  supplier        String?
+  manufactureDate DateTime?
+  expirationDate  DateTime?
+  unitCost        Decimal? @db.Decimal(12, 4)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  formula         FormulaRetirada @relation(fields: [formulaId], references: [id], onDelete: Cascade)
+  movements       FormulaMovement[]
+
+  @@unique([formulaId, batchCode])
+  @@index([formulaId, expirationDate])
+}
+
+model FormulaMovement {
+  id              String          @id @default(uuid())
+  formulaId       String
+  formulaName     String
+  type            String
+  quantity        Int
+  responsibleId   String?
+  responsibleName String
+  recipient       String?
+  reason          String?
+  notes           String?
+  lotId           String?
+  lotCode         String?
+  supplier        String?
+  unitCost        Decimal?        @db.Decimal(12, 4)
+  countedQty      Int?
+  companyId       String
+  date            DateTime        @default(now())
+
+  company         Company         @relation(fields: [companyId], references: [id])
+  formula         FormulaRetirada @relation(fields: [formulaId], references: [id], onDelete: Restrict)
+  lot             FormulaLot?     @relation(fields: [lotId], references: [id], onDelete: SetNull)
+
+  @@index([formulaId, date])
+  @@index([lotId, date])
+  @@index([companyId])
+}
+
+model Movement {
+  id              String   @id @default(uuid())
+  type            String   // entrada, saida
+  epiId           String
+  epiName         String
+  epiCode         String
+  quantity        Int
+  responsibleId   String?
+  responsibleName String
+  recipient       String?
+  reason          String?
+  notes           String?
+  date            DateTime @default(now())
+  businessUnitId  String?
+  companyId       String
+
+  company         Company       @relation(fields: [companyId], references: [id])
+  epi             EPI           @relation(fields: [epiId], references: [id], onDelete: Cascade)
+  responsible     User?         @relation("UserMovements", fields: [responsibleId], references: [id], onDelete: SetNull)
+  businessUnit    BusinessUnit? @relation(fields: [businessUnitId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  timestamp DateTime @default(now())
+  userId    String?
+  userName  String
+  userRole  String
+  action    String
+  details   String
+  module    String   @default("system")
+  companyId String
+
+  company   Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+}
+
+model Packaging {
+  id           String   @id
+  code         String
+  name         String
+  category     String
+  type         String
+  material     String
+  unit         String
+  capacity     Float?
+  capacityUnit String?
+  dimensions   String?
+  manufacturer String?
+  location     String
+  currentQty   Int      @default(0)
+  minQty       Int      @default(0)
+  unitCost     Decimal? @db.Decimal(12, 4)
+  status       String   @default("active")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  companyId    String
+
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  movements    PackagingMovement[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+model PackagingMovement {
+  id              String   @id
+  packagingId     String
+  packagingCode   String
+  packagingName   String
+  type            String
+  quantity        Int
+  responsibleId   String?
+  responsibleName String
+  recipient       String?
+  reason          String?
+  notes           String?
+  date            DateTime @default(now())
+  companyId       String
+
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  packaging       Packaging @relation(fields: [packagingId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, date])
+  @@index([packagingId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  timestamp DateTime @default(now())
+  recipient String
+  subject   String
+  body      String
+  read      Boolean  @default(false)
+  type      String   @default("low_stock") // low_stock, out_of_stock, general
+  epiId     String?
+  companyId String
+
+  company   Company  @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+}
+
+model Company {
+  id                String              @id
+  name              String
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime
+  auditLogs         AuditLog[]
+  businessUnits     BusinessUnit[]
+  epis              EPI[]
+  formulaMovements  FormulaMovement[]
+  formulaRetiradas  FormulaRetirada[]
+  movements         Movement[]
+  notifications     Notification[]
+  packagings        Packaging[]
+  packagingMovements PackagingMovement[]
+  users             User[]
+}
